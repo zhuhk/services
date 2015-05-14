@@ -12,7 +12,7 @@ fi
 
 SHELL_DIR=$(cd $(dirname $BASH_SOURCE) && pwd)
 WORK_DIR=$(cd $SHELL_DIR/.. && pwd)
-source $SHELL_DIR/func.sh
+source $WORK_DIR/tools/func.sh
 cd $WORK_DIR
 
 REDIS_SERVER_BIN=$WORK_DIR/bin/redis-server
