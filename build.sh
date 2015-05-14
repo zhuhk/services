@@ -12,8 +12,6 @@ for dir in $(ls); do
   fi
   echo $dir
   make -C $dir $cmd
-  mv $dir/output output/$dir
+  [ -d $dir/output ] && mv $dir/output output/$dir
 done
-if [ -d output/share ];then
-  mv output/share output/services
-fi
+exit 0
