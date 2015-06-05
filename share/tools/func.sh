@@ -196,7 +196,12 @@ get_filesize(){
 }
 
 get_pids(){
-  pids=$(ps axu|grep "$PsName"| grep -v grep |awk '{print $2}')
+  pids=""
+  _pids=$(ps axu|grep "$PsName"| grep -v grep |awk '{print $2}')
+  for pid in $_pids;do 
+    pids="$pids $(pstree -p $pid|grep -Eo '([0-9]+)')"
+  done
+  pids=$(echo $pids)
 }
 
 isRunning(){
@@ -248,7 +253,7 @@ ctlstop(){
       kill -9 $pids
     else
       if [ $waitSeconds -gt 0 ];then
-        logex 3 "still running, try to stop again"
+        logex 3 "still running, try to stop again. pids=$pids"
       fi
       eval $ctlstopcmd $pids
     fi
@@ -287,6 +292,8 @@ sigsub_usr1(){
 }
 
 Sleep(){
+  sleep $1
+  return 0
   if [ -z "$1" ];then
     sleep 1
     return 0
