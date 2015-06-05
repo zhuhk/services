@@ -195,6 +195,13 @@ get_filesize(){
   return 0
 }
 
+get_subpids(){
+  pids=""
+  for pid in $@;do 
+    pids="$pids $(pstree -p $pid|grep -Eo '([0-9]+)')"
+  done
+  pids=$(echo $pids)
+}
 get_pids(){
   pids=""
   _pids=$(ps axu|grep "$PsName"| grep -v grep |awk '{print $2}')
