@@ -44,6 +44,16 @@ while [ $stop_flag -eq 0 ]; do
       log_info "truncate $f"
     fi
   done
+  for((i=0;i<g_autoTruncCnt;i++)){
+    dir=${g_autoTrunc[$i]}
+    for f in $(ls $dir);do
+      declare -i fsize=$(get_filesize "$f")
+      if [ "$fsize" -gt $((800*1024*1024)) ];then
+        >$f
+        log_info "truncate $f"
+      fi
+    done
+  }
   for((i=0;i<g_autocmd_cnt;i++)){
     cmd="${g_autocmds[$i]}"
     eval $cmd
