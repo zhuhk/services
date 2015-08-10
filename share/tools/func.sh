@@ -27,6 +27,7 @@ update_main(){
   fi
   cd $WorkDir
 
+  log_info "ver=$ver"
   if [ -f conf/env.sh ];then
     source conf/env.sh
   fi
@@ -46,9 +47,9 @@ update_main(){
       exit 1
     fi
     if isUpdateChange;then
-      mkdir -p tools
-      cp deploy/tools/*.sh tools/
-      source $0 "$@"
+      log_warn "conf/env.sh tools/{func.sh,upgrade.sh} changed. try to rerun"
+      cp -rf deploy/{tools,conf} ./
+      source $0
     fi
     rm -f deploy/meta.sh
     if ! update_Worker;then
@@ -69,9 +70,9 @@ update_main(){
     mkdir -p deploy
     cp -rf deployHist/$ver/* deploy/
     if isUpdateChange;then
-      mkdir -p tools
-      cp deploy/tools/*.sh tools/
-      source $0 "$@"
+      log_warn "conf/env.sh tools/{func.sh,upgrade.sh} changed. try to rerun"
+      cp -rf deploy/{tools,conf} ./
+      source $0
     fi
     if ! update_Worker;then
       log_warn "update_Worker failed"
@@ -83,12 +84,15 @@ update_main(){
 }
 isUpdateChange(){
   if is_diff deploy/conf/env.sh conf/env.sh;then
+    log_info "env.sh change"
     return 0
   fi
   if is_diff deploy/tools/func.sh tools/func.sh;then
+    log_info "func.sh change"
     return 0
   fi
   if is_diff deploy/tools/upgrade.sh tools/upgrade.sh;then
+    log_info "upgrade.sh change"
     return 0
   fi
   return 1
@@ -125,7 +129,6 @@ update_rsync(){
 }
 
 update_save(){
-  echo "789"
   if [ -z "$version" ];then
     version=$dstr
   fi
@@ -453,8 +456,9 @@ logex(){
   else
     if [ "$severity" != "[INFO]" ];then
       echo -e `date "+%Y-%m-%d %H:%M:%S"`" $SUB_PID - ${envinfo} $@" >&2
+    else
+      echo -e `date "+%Y-%m-%d %H:%M:%S"`" $SUB_PID - ${envinfo} $@"
     fi
-    echo -e `date "+%Y-%m-%d %H:%M:%S"`" $SUB_PID - ${envinfo} $@"
   fi
 }
 log_info(){
