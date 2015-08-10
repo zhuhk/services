@@ -9,86 +9,141 @@ if [ -z "$dumpDir" ];then
   dumpDir=/data1/minisearch/dumps
 fi
 
-if [ -f $WorkDir/bin/conf/service ];then
-  source $WorkDir/bin/conf/service
-fi
+# update_main <ver>
+update_main(){
+  ver="$1"
+  if [ -z "$ver" ];then
+    echo "Usage: $0 <latest|version>"
+    exit 1
+  fi
 
-if [ -z "$rsync_svr" ];then
-  rsync_svr=10.73.12.132
-fi
-rsync_workdir=$rsync_svr::MINI_SEARCH/hongkai1
+  if [ -z "$WorkDir" ];then
+    echo "WorkDir is undefined"
+    exit 1
+  fi
+  if [ $(type -t update_Worker) != "function" ];then
+    echo "update is undefined"
+    exit 1
+  fi
+  cd $WorkDir
 
-if [ -n "$WorkDir" ];then
-  ToolDir=$WorkDir/bin/tools
-  ShellDir=$WorkDir/bin/shell
-  ConfDir=$WorkDir/bin/conf
-  DataDir=$WorkDir/data
-  LogDir=$WorkDir/log
-fi
+  if [ -f conf/env.sh ];then
+    source conf/env.sh
+  fi
 
+  if [ -f .upgraderc ];then
+    source .upgraderc
+  fi
+
+  if [ "$ver" == "latest" ];then
+    if [ -z "$rsync_prefix" ] || [ -z "$service" ];then
+      log_warn "rsync_prefix=$rsync_prefix service=$service"
+      exit 1
+    fi
+    rsync_src=$rsync_prefix/$service
+    if ! update_rsync;then
+      log_warn "update_rsync failed"
+      exit 1
+    fi
+    if isUpdateChange;then
+      mkdir -p tools
+      cp deploy/tools/*.sh tools/
+      source $0 "$@"
+    fi
+    rm -f deploy/meta.sh
+    if ! update_Worker;then
+      log_warn "update_Worker failed"
+      exit 1
+    fi
+    if ! update_save; then
+      log_warn "update_save failed"
+      exit 1
+    fi
+    log_info "upgrade to latest success"
+    exit 0
+  else
+    if [ ! -d deployHist/$ver ];then
+      log_warn "deploy $ver not found"
+      exit 1
+    fi
+    mkdir -p deploy
+    cp -rf deployHist/$ver/* deploy/
+    if isUpdateChange;then
+      mkdir -p tools
+      cp deploy/tools/*.sh tools/
+      source $0 "$@"
+    fi
+    if ! update_Worker;then
+      log_warn "update_Worker failed"
+      exit 1
+    fi
+    log_info "rollback to hist $ver success"
+    exit 0
+  fi
+}
+isUpdateChange(){
+  if is_diff deploy/conf/env.sh conf/env.sh;then
+    return 0
+  fi
+  if is_diff deploy/tools/func.sh tools/func.sh;then
+    return 0
+  fi
+  if is_diff deploy/tools/upgrade.sh tools/upgrade.sh;then
+    return 0
+  fi
+  return 1
+}
 #input: dir fname
 update_deploy(){
+  if [ -z "$version" ];then
+    version=$dstr
+  fi
   if [ -f deploy/$dir/$fname ] && is_diff $dir/$fname deploy/$dir/$fname ;then
-    if [ -f $dir/$fname ] && [ ! -h $dir/$fname ];then
-      mv $dir/$fname $dir/$fname.$(date "+%Y%m%d_%H%M%S")
-    fi
-    logex 2 "[INFO]update $fname -> pool/$fname.$dstr"
+    logex 2 "[INFO]" "update $fname -> pool/$fname.$version"
     mkdir -p $dir/pool
-    cp deploy/$dir/$fname $dir/pool/$fname.$dstr
+    cp deploy/$dir/$fname $dir/pool/$fname.$version
     cd $dir
-    ln -sf pool/$fname.$dstr $fname
+    ln -sf pool/$fname.$version $fname
     cd - >&/dev/null
+    ls $dir/pool/$fname.*|sort -r|awk '{if(NR>10) print $0}' |xargs rm -f
   fi
 }
 
-update_general(){
-  if [ -z $service ];then
-    logex 2 "[WARN]service NotFound"
+update_rsync(){
+  if [ -z "$rsync_src" ];then
+    logex 2 "[WARN]" "rsync failed. svr:$rsync_src"
     return 1
   fi
 
-  rsync -ar --delete $rsync_workdir/$service/$module/ deploy
+  rsync -ar --delete $rsync_src/ deploy
   if [ $? -ne 0 ];then
-    logex 2 "[WARN]rsync failed. svr:$rsync_workdir/$service/$module/"
+    logex 2 "[WARN]" "rsync failed. svr:$rsync_src"
     return 1
   fi
 
-  mkdir -p bin/{tools,conf,shell}
-  cp -rf deploy/bin/{conf,tools,shell} bin
   return 0
 }
 
-update_ac(){
-  rsync -Aar --delete $rsync_workdir/$service/ac/ deploy
-  if [ $? -ne 0 ];then
-    logex 2 "[FATAL]rsync failed. svr:$rsync_workdir/$service/ac/"
-    return 1
+update_save(){
+  echo "789"
+  if [ -z "$version" ];then
+    version=$dstr
   fi
- 
+  metaFile=deployHist/$version/meta.sh
+  rm -rf deployHist/$version
+  mkdir -p deployHist/$version
+  cp -rf deploy deployHist/$version/
+  ls deployHist/|sort -r|awk '{if(NR>10) print $0}' |xargs -I '{}' rm -rf deployHist/'{}'
+  echo "dstr=$dstr" >$metaFile
+  echo "version=$version" >$metaFile
+}
 
-  acplugin=lib$service.so
-  fname=$acplugin
-  dir=so
-  update_deploy
-  cd $dir
-  ln -sf $fname libacplugin.so
-  cd - >&/dev/null
-
-  fname=ac_r
-  dir=bin/server
-  update_deploy
-
-  mkdir -p bin/tools bin/server bin/conf
-  cp -rf deploy/bin/{conf,tools,shell} bin
-  if [ -d deploy/data ];then
-    cp -rf deploy/data ./ 
-  fi
-
-  mkdir -p $dumpDir
-  ln -sf $dumpDir
+get_ipList(){
+  local ip=$(ifconfig |grep -o "inet addr:[0-9.]*"|cut -d ":" -f 2|grep -v "^127")
+  echo $ip
 }
 get_svrid(){
-  local ip=$(hostname -I)
+  local ip=$(get_ipList)
 
   id=$(awk -v ip="$ip" -v WorkDir="$WorkDir" 'BEGIN{
      nf = split(ip,arr);
@@ -229,19 +284,20 @@ ctlstart(){
     ctlstartcmd=$PsName
   fi
   if isRunning;then
-    logex 3 "already running, quit"
+    logex 3 "[INFO]" "already running, quit"
     return 0
   fi
   mkdir -p $WorkDir/log
   local fname=$(basename ${PsName%.*})
-  $ctlstartcmd >>$WorkDir/log/run.$fname.log 2>&1 </dev/null &
+  echoex 3 "ctlstartcmd='$ctlstartcmd'" >>$WorkDir/log/run.$fname.log
+  $ctlstartcmd >>$WorkDir/log/run.$fname.log 2>>$WorkDir/log/run.$fname.err </dev/null &
 
   sleep 2
   if isRunning; then
-    logex 3 "start successfully"
+    logex 3 "[INFO]" "start successfully"
     return 0
   else
-    logex 3 "start failed"
+    logex 3 "[INFO]" "start failed"
     return 1
   fi
 }
@@ -253,21 +309,21 @@ ctlstop(){
   waitSeconds=0
   while isRunning;do
     if [ $waitSeconds -gt 30 ];then
-      logex 3 "stop failed"
+      logex 3 "[INFO]" "stop failed"
       return 1
     elif [ $waitSeconds -gt 20 ];then
-      logex 3 "gracefully stop failed. try to force stop"
+      logex 3 "[INFO]" "gracefully stop failed. try to force stop"
       kill -9 $pids
     else
       if [ $waitSeconds -gt 0 ];then
-        logex 3 "still running, try to stop again. pids=$pids"
+        logex 3 "[INFO]" "still running, try to stop again. pids=$pids"
       fi
       eval $ctlstopcmd $pids
     fi
     sleep 1
     ((waitSeconds++))
   done
-  logex 3 "stop successfully"
+  logex 3 "[INFO]" "stop successfully"
   return 0
 }
 
@@ -330,15 +386,16 @@ init_log(){
   fi
   mkdir -p $LogDir
   g_LogFile=$LogDir/$fname.log
+  g_ErrFile=$LogDir/$fname.err
   declare -i filesize=`get_filesize "$g_LogFile"`
   if [ $filesize -gt $((1000*1024*1024)) ];then
     >$g_LogFile
   fi
-  filesize=`get_filesize "$g_LogFile.err"`
+  filesize=`get_filesize "$g_ErrFile"`
   if [ $filesize -gt $((1000*1024*1024)) ];then
     >$g_LogFile.err
   fi
-  exec 1>>$g_LogFile  2>>$g_LogFile.err
+  exec 1>>$g_LogFile  2>>$g_ErrFile
   set -x
   return 0
 }
@@ -356,8 +413,7 @@ log(){
     echo -e `date "+%Y-%m-%d %H:%M:%S"`" $SUB_PID - $@"  >&2
   fi
 }
-#logex <level> <info>
-logex(){
+echoex(){
   local lv
   lv="$1"
   shift
@@ -367,26 +423,50 @@ logex(){
   SUB_PID=`sh -c 'echo $PPID'`
   local envinfo
   envinfo="(${BASH_SOURCE[$lv]##*/}:${BASH_LINENO[$((lv-1))]},${FUNCNAME[$lv]})"
+  echo -e `date "+%Y-%m-%d %H:%M:%S"`" $SUB_PID - ${envinfo} $@"
+}
+#logex <level> <info>
+logex(){
+  local lv
+  lv="$1"
+  shift
+  severity="$1"
+  if [ $lv -ge ${#BASH_SOURCE[@]} ];then
+    lv=${#BASH_SOURCE[@]}-1
+  fi
+  SUB_PID=`sh -c 'echo $PPID'`
+  local envinfo
+  envinfo="(${BASH_SOURCE[$lv]##*/}:${BASH_LINENO[$((lv-1))]},${FUNCNAME[$lv]})"
   if [ -n "$g_LogFile" ];then
+    if [ "$severity" != "[INFO]" ];then
+      declare -i filesize=`get_filesize "$g_ErrFile"`
+      if [ $filesize -gt $((1000*1024*1024)) ];then
+        >$g_ErrFile
+      fi
+      echo -e `date "+%Y-%m-%d %H:%M:%S"`" $SUB_PID - ${envinfo} $@" >>$g_ErrFile
+    fi
     declare -i filesize=`get_filesize "$g_LogFile"`
     if [ $filesize -gt $((1000*1024*1024)) ];then
       >$g_LogFile
     fi
     echo -e `date "+%Y-%m-%d %H:%M:%S"`" $SUB_PID - ${envinfo} $@" >>$g_LogFile
   else
-    echo -e `date "+%Y-%m-%d %H:%M:%S"`" $SUB_PID - ${envinfo} $@"  >&2
+    if [ "$severity" != "[INFO]" ];then
+      echo -e `date "+%Y-%m-%d %H:%M:%S"`" $SUB_PID - ${envinfo} $@" >&2
+    fi
+    echo -e `date "+%Y-%m-%d %H:%M:%S"`" $SUB_PID - ${envinfo} $@"
   fi
 }
 log_info(){
-  logex 2 "[INFO] $@"
+  logex 2 "[INFO]" "$@"
   return $?
 }
 log_warn(){
-  logex 2 "[WARN] $@"
+  logex 2 "[WARN]" "$@"
   return $?
 }
 log_fatal(){
-  logex 2 "[fatal] $@"
+  logex 2 "[fatal]" "$@"
   return $?
 }
 get_ppid(){
@@ -536,7 +616,7 @@ retry(){
     if [ $ret -eq 0 ];then
       return 0
     fi
-    logex 2 "ret=$ret retry=$i cmd='$@'"
+    logex 2 "[INFO]" "ret=$ret retry=$i cmd='$@'"
     sleep $retry_wait
   }
   return 1
@@ -653,7 +733,7 @@ logrun(){
   runspec=${runspec%.*}
   local cmd=${1}
   if [[ -z "$cmd" ]];then
-    logex 2 "[error] cmd is empty"
+    logex 2 "[FATAL]" "cmd is empty"
     return 2
   fi
   init_log $WORK_ROOT/log "${runspec}_${cmd}"
