@@ -272,6 +272,9 @@ ctlstop(){
 }
 
 ctlmain(){
+  if [ -n "$WorkDir" ];then
+    cd $WorkDir
+  fi
   if [ "$1" == "start" ];then
     ctlstart
   elif [ "$1" == "stop" ];then

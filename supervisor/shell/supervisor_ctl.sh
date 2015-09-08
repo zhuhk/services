@@ -1,5 +1,5 @@
 #! /bin/bash
-CurDir=$(cd $(dirname $BASH_SOURCE) && pwd)
+CurDir=$(cd -P $(dirname $BASH_SOURCE) && pwd)
 WorkDir=$(cd $CurDir/.. && pwd)
 source $WorkDir/tools/func.sh
 

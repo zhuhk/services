@@ -10,7 +10,7 @@ if [ $# -eq 0 ];then
   exit 0
 fi
 
-SHELL_DIR=$(cd $(dirname $BASH_SOURCE) && pwd)
+SHELL_DIR=$(cd -P $(dirname $BASH_SOURCE) && pwd)
 WORK_DIR=$(cd $SHELL_DIR/.. && pwd)
 source $WORK_DIR/tools/func.sh
 cd $WORK_DIR

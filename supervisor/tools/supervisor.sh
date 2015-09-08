@@ -1,6 +1,6 @@
 #!/bin/bash
 
-WorkDir=$(cd $(dirname $BASH_SOURCE) && cd .. && pwd)
+WorkDir=$(cd -P $(dirname $BASH_SOURCE) && cd .. && pwd)
 coreDumpDir=""
 source $WorkDir/tools/func.sh
 cnt=0
