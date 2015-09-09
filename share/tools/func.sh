@@ -253,6 +253,14 @@ get_filesize(){
   return 0
 }
 
+echo_subpids(){
+  local pids=""
+  for pid in $@;do
+    pids="$pids $(pstree -p $pid|grep -Eo '([0-9]+)')"
+  done
+  echo $pids
+}
+
 get_subpids(){
   pids=""
   for pid in $@;do 
@@ -348,9 +356,6 @@ ctlmain(){
 
 sig_usr1(){
   stop_flag=1
-  if [ -n "$subpid" ];then
-    kill -s USR1 $subpid
-  fi
 }
 sigsub_usr1(){
   sig_usr1
