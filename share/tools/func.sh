@@ -1,13 +1,6 @@
-if [ "$0" != "-bash" ];then
-  ComSubject="][`hostname`][`basename $0`"
-  ComGSMSubject="[`basename $0`]"
-fi
+#!/bin/bash
 
 dstr=$(date +%Y%m%d_%H%M%S)
-
-if [ -z "$dumpDir" ];then
-  dumpDir=/data1/minisearch/dumps
-fi
 
 # update_main <ver>
 update_main(){
@@ -31,17 +24,15 @@ update_main(){
   if [ -f conf/env.sh ];then
     source conf/env.sh
   fi
-
-  if [ -f .upgraderc ];then
-    source .upgraderc
+  if [ -f .envrc ];then
+    source .envrc
   fi
 
   if [ "$ver" == "latest" ];then
-    if [ -z "$rsync_prefix" ] || [ -z "$service" ];then
-      log_warn "rsync_prefix=$rsync_prefix service=$service"
+    if [ -z "$rsync_src" ];then
+      log_warn "rsync_src=$rsync_src"
       exit 1
     fi
-    rsync_src=$rsync_prefix/$service
     if ! update_rsync;then
       log_warn "update_rsync failed"
       exit 1
@@ -271,6 +262,10 @@ get_subpids(){
 get_pids(){
   pids=""
   _pids=$(ps axu|grep "$PsName"| grep -v grep |awk '{print $2}')
+  if [ "$ign_subpids" == 1 ];then
+    pids=$(echo $_pids)
+    return 0
+  fi
   for pid in $_pids;do 
     pids="$pids $(pstree -p $pid|grep -Eo '([0-9]+)')"
   done
