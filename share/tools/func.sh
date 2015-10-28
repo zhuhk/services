@@ -1,9 +1,13 @@
 #!/bin/bash
 
-dstr=$(date +%Y%m%d_%H%M%S)
+if [ -z "$dstr" ];then
+  dstr=$(date +%Y%m%d_%H%M%S)
+fi
 
 # update_main <ver>
 update_main(){
+  sig_init
+
   ver="$1"
   if [ -z "$ver" ];then
     echo "Usage: $0 <latest|version>"
@@ -88,7 +92,7 @@ isUpdateChange(){
   fi
   return 1
 }
-#input: dir fname
+#input: dir fname version
 update_deploy(){
   if [ -z "$version" ];then
     version=$dstr
@@ -119,6 +123,7 @@ update_rsync(){
   return 0
 }
 
+# input:version dstr
 update_save(){
   if [ -z "$version" ];then
     version=$dstr
@@ -129,7 +134,7 @@ update_save(){
   cp -rf deploy deployHist/$version/
   ls deployHist/|sort -r|awk '{if(NR>10) print $0}' |xargs -I '{}' rm -rf deployHist/'{}'
   echo "dstr=$dstr" >$metaFile
-  echo "version=$version" >$metaFile
+  echo "version=$version" >>$metaFile
 }
 
 get_ipList(){
@@ -247,7 +252,7 @@ get_filesize(){
 echo_subpids(){
   local pids=""
   for pid in $@;do
-    pids="$pids $(pstree -p $pid|grep -Eo '([0-9]+)')"
+    pids="$pids $(pstree -p $pid|grep -Eo '\([0-9]+\)'|awk -F '[()]' '{print $2}')"
   done
   echo $pids
 }
@@ -255,7 +260,7 @@ echo_subpids(){
 get_subpids(){
   pids=""
   for pid in $@;do 
-    pids="$pids $(pstree -p $pid|grep -Eo '([0-9]+)')"
+    pids="$pids $(pstree -p $pid|grep -Eo '\([0-9]+\)'|awk -F '[()]' '{print $2}')"
   done
   pids=$(echo $pids)
 }
@@ -284,8 +289,19 @@ ctlhelp(){
   echo "Usage: $0 <start|stop|restart>"
   return 0
 }
-
 ctlstart(){
+  mkdir -p $WorkDir/run
+  if [ -z "$mainScriptName" ];then
+    mainScriptName=${0##*/}
+  else
+    mainScriptName=${mainScriptName##*/}
+  fi
+  if ! mkdir $WorkDir/run/lock.$mainScriptName;then
+    log_info "$mainScriptName is running, quit"
+    return 0
+  fi
+  trap "rm -rf $WorkDir/run/lock.$mainScriptName" EXIT INT TERM
+
   if [ -z "$ctlstartcmd" ];then
     ctlstartcmd=$PsName
   fi
@@ -332,8 +348,19 @@ ctlstop(){
   logex 3 "[INFO]" "stop successfully"
   return 0
 }
-
+errtrap(){
+  trap 'echo SIGNAL: ret=$? pos=${FUNCNAME[@]:-main}:${BASH_LINENO[@]}:$LINENO cmd="${BASH_COMMAND[0]}"' ERR
+}
+sig_init(){
+  #set -o pipefail # 'echo -en ""|grep ""' will trigger exit, so don't use it
+  set -o errexit
+  stop_flag=0
+  trap "sig_usr1" SIGUSR1
+  errtrap
+}
 ctlmain(){
+  sig_init
+
   if [ -n "$WorkDir" ];then
     cd $WorkDir
   fi
@@ -777,6 +804,8 @@ usage(){
 }
 
 main(){
+  sig_init
+
   g_cmd=$1
   shift
 
